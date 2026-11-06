@@ -31,7 +31,7 @@ account_bp = Blueprint("account", __name__, template_folder="templates")
 def account_css():
     return send_from_directory(CSS_DIR, "account.css", mimetype="text/css")
 
-
+# добавление
 # База данных
 def init_db():
     with sqlite3.connect(DB_PATH) as db:
