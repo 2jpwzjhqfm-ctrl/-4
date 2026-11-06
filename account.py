@@ -10,29 +10,29 @@ from flask import (
 from werkzeug.security import generate_password_hash, check_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "clinic.db")   
-CSS_DIR = os.path.join(BASE_DIR, "css")         
+DB_PATH = os.path.join(BASE_DIR, "clinic.db")
+CSS_DIR = os.path.join(BASE_DIR, "css")
 
 ADMIN_CODE = os.environ.get("ADMIN_CODE", "vet-1234")
 
-#  Правила программы лояльности (меняются в одном месте) 
-POINTS_PER_VISIT = 100       
-RUB_PER_POINT = 1            
+# Правила программы лояльности (меняются в одном месте)
+POINTS_PER_VISIT = 100
+RUB_PER_POINT = 1
 LEVELS = [
     {"slug": "standard", "name": "Стандарт",   "min_visits": 0,  "discount": 0},
     {"slug": "silver",   "name": "Серебряный", "min_visits": 5,  "discount": 5},
     {"slug": "gold",     "name": "Золотой",    "min_visits": 10, "discount": 10},
 ]
 
-# Модуль личного кабинета 
+# Модуль личного кабинета
 account_bp = Blueprint("account", __name__, template_folder="templates")
- 
+
 @account_bp.route("/css/account.css")
 def account_css():
     return send_from_directory(CSS_DIR, "account.css", mimetype="text/css")
 
 
-#  База данных 
+# База данных
 def init_db():
     with sqlite3.connect(DB_PATH) as db:
         db.executescript("""
@@ -58,6 +58,7 @@ def get_db():
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
     return db
+
 def current_user():
     uid = session.get("user_id")
     if not uid:
@@ -104,7 +105,7 @@ def next_level_for(visits_count):
     return None
 
 
-# Маршруты 
+# Маршруты
 @account_bp.route("/register", methods=["GET", "POST"])
 def register():
     if current_user():
@@ -165,7 +166,7 @@ def login():
         if user and check_password_hash(user["password_hash"], password):
             session["user_id"] = user["id"]
             session.permanent = True
-            flash("С возвращением, {}!".format(user["name"]), "success")
+            flash(f"С возвращением, {user['name']}!", "success")
             return redirect(url_for("account.account_page"))
         flash("Неверный e-mail или пароль.", "error")
     return render_template("login.html", form=request.form)
@@ -206,7 +207,7 @@ def account_page():
     return render_template(
         "account.html",
         user=user,
-        card_number="HP-{:06d}".format(user["id"]),
+        card_number=f"HP-{user['id']:06d}",
         points=points,
         points_value=points * RUB_PER_POINT,
         discount=level["discount"],
@@ -237,11 +238,22 @@ def admin_mark():
             return render_template("admin_mark.html", form=request.form)
         try:
             amount = float(amount_raw.replace(",", "."))
-            assert amount >= 0
-        except Exception:
+        except ValueError:
             flash("Сумма должна быть неотрицательным числом.", "error")
             return render_template("admin_mark.html", form=request.form)
-        visit_date = date_raw or datetime.date.today().isoformat()
+        if amount < 0:
+            flash("Сумма должна быть неотрицательным числом.", "error")
+            return render_template("admin_mark.html", form=request.form)
+
+        # дата: проверяем формат, пустое поле означает «сегодня»
+        if date_raw:
+            try:
+                visit_date = datetime.date.fromisoformat(date_raw).isoformat()
+            except ValueError:
+                flash("Дата должна быть в формате ГГГГ-ММ-ДД.", "error")
+                return render_template("admin_mark.html", form=request.form)
+        else:
+            visit_date = datetime.date.today().isoformat()
 
         with get_db() as db:
             user = db.execute(
@@ -257,8 +269,7 @@ def admin_mark():
                 "UPDATE users SET points = points + ? WHERE id = ?",
                 (POINTS_PER_VISIT, user["id"]))
 
-        flash("Визит отмечен: {} — {} (+{} баллов)".format(
-            user["name"], service, POINTS_PER_VISIT), "success")
+        flash(f"Визит отмечен: {user['name']} — {service} (+{POINTS_PER_VISIT} баллов)", "success")
         return redirect(url_for("account.admin_mark"))
 
     return render_template("admin_mark.html", form={})
